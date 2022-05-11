@@ -1,0 +1,9 @@
+{
+  "1": {
+    "deviceId": "device:leaf1",
+    "srcAddress": "10.64.5.36",
+    "dstAddress": "10.64.5.131",
+    "srcAddressRewritten": "10.64.5.136",
+    "dstAddressRewritten": "10.64.5.130"
+  }
+}
