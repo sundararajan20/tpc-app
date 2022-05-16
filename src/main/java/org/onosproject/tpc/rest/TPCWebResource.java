@@ -2,9 +2,13 @@ package org.onosproject.tpc.rest;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.onlab.packet.Ip4Address;
+import org.onosproject.net.Port;
+import org.onosproject.net.PortNumber;
 import org.onosproject.rest.AbstractWebResource;
 import org.onosproject.tpc.TPCService;
+import org.onosproject.tpc.common.CheckerSliceIdEntry;
 import org.onosproject.tpc.common.ExfiltrationAttackEntry;
+import org.onosproject.tpc.common.SliceQoSEntry;
 
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
@@ -24,6 +28,13 @@ public class TPCWebResource extends AbstractWebResource {
     @Path("flush")
     public Response flushFlowRules() {
         get(TPCService.class).flushFlowRules();
+        return Response.noContent().build();
+    }
+
+    @GET
+    @Path("turn_on_checking")
+    public Response turnOnChecking() {
+        get(TPCService.class).turnOnChecking();
         return Response.noContent().build();
     }
 
@@ -73,5 +84,92 @@ public class TPCWebResource extends AbstractWebResource {
         }
 
         return attackEntries;
+    }
+
+    /**
+     * Post checker slice id entry.
+     *
+     * @return 204 NoContent
+     */
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Path("add_slice_id")
+    public Response postCheckerSliceIds(InputStream stream) {
+        List<CheckerSliceIdEntry> attackEntries = jsonToCheckerSliceIdEntries(stream);
+        get(TPCService.class).postCheckerSliceIdEntries(attackEntries);
+        return Response.noContent().build();
+    }
+
+    private List<CheckerSliceIdEntry> jsonToCheckerSliceIdEntries(InputStream stream) throws IllegalArgumentException {
+        List<CheckerSliceIdEntry> checkerSliceIdEntries = new ArrayList<>();
+
+        JsonNode node;
+        try {
+            node = readTreeFromStream(mapper(), stream);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Unable to parse add request", e);
+        }
+
+        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> field = fields.next();
+            JsonNode subNode = field.getValue();
+
+            String deviceIdStr = subNode.path("deviceId").asText(null);
+            String portNumberStr = subNode.path("portNumber").asText(null);
+            String sliceIdStr = subNode.path("sliceId").asText(null);
+
+            if (deviceIdStr != null && portNumberStr != null && sliceIdStr != null) {
+                PortNumber portNumber = PortNumber.fromString(portNumberStr);
+                Byte sliceId = Byte.valueOf(sliceIdStr);
+
+                checkerSliceIdEntries.add(new CheckerSliceIdEntry(deviceIdStr, portNumber, sliceId));
+            }
+        }
+
+        return checkerSliceIdEntries;
+    }
+
+    /**
+     * Post slice QoS entry.
+     *
+     * @return 204 NoContent
+     */
+    @POST
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Path("add_slice_qos")
+    public Response postSliceQoSEntries(InputStream stream) {
+        List<SliceQoSEntry> attackEntries = jsonToSliceQosEntries(stream);
+        get(TPCService.class).postSliceQoSEntries(attackEntries);
+        return Response.noContent().build();
+    }
+
+    private List<SliceQoSEntry> jsonToSliceQosEntries(InputStream stream) throws IllegalArgumentException {
+        List<SliceQoSEntry> sliceQoSEntries = new ArrayList<>();
+
+        JsonNode node;
+        try {
+            node = readTreeFromStream(mapper(), stream);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Unable to parse add request", e);
+        }
+
+        Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> field = fields.next();
+            JsonNode subNode = field.getValue();
+
+            String sliceIdStr = subNode.path("sliceId").asText(null);
+            String pirStr = subNode.path("pir").asText(null);
+
+            if (sliceIdStr != null && pirStr != null) {
+                byte sliceId = Byte.valueOf(sliceIdStr);
+                long pir = Long.valueOf(pirStr);
+
+                sliceQoSEntries.add(new SliceQoSEntry(sliceId, pir));
+            }
+        }
+
+        return sliceQoSEntries;
     }
 }

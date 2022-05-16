@@ -15,13 +15,18 @@
  */
 package org.onosproject.tpc;
 
+import com.google.common.collect.Lists;
 import org.onlab.packet.Ethernet;
 import org.onosproject.cfg.ComponentConfigService;
 import org.onosproject.core.ApplicationId;
+import org.onosproject.mastership.MastershipService;
+import org.onosproject.net.Device;
 import org.onosproject.net.DeviceId;
+import org.onosproject.net.device.DeviceService;
 import org.onosproject.net.flow.FlowRule;
 import org.onosproject.net.flow.FlowRuleService;
 import org.onosproject.net.flow.criteria.PiCriterion;
+import org.onosproject.net.meter.*;
 import org.onosproject.net.packet.PacketContext;
 import org.onosproject.net.packet.PacketProcessor;
 import org.onosproject.net.packet.PacketService;
@@ -30,23 +35,20 @@ import org.onosproject.net.pi.model.PiActionParamId;
 import org.onosproject.net.pi.model.PiMatchFieldId;
 import org.onosproject.net.pi.runtime.PiAction;
 import org.onosproject.net.pi.runtime.PiActionParam;
+import org.onosproject.tpc.common.CheckerSliceIdEntry;
 import org.onosproject.tpc.common.ExfiltrationAttackEntry;
-import org.osgi.service.component.ComponentContext;
+import org.onosproject.tpc.common.SliceQoSEntry;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
-import org.osgi.service.component.annotations.Modified;
 import org.osgi.service.component.annotations.Reference;
 import org.osgi.service.component.annotations.ReferenceCardinality;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Dictionary;
-import java.util.List;
-import java.util.Properties;
+import java.util.*;
 
-import static org.onlab.util.Tools.get;
+import static org.onosproject.tpc.AppConstants.HIGH_FLOW_RULE_PRIORITY;
 import static org.onosproject.tpc.AppConstants.MEDIUM_FLOW_RULE_PRIORITY;
 import static org.onosproject.tpc.common.Utils.buildFlowRule;
 
@@ -65,6 +67,15 @@ public class TPCComponent implements TPCService {
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     private FlowRuleService flowRuleService;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY)
+    private DeviceService deviceService;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY)
+    private MastershipService mastershipService;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY)
+    private MeterService meterService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     private MainComponent mainComponent;
@@ -103,6 +114,182 @@ public class TPCComponent implements TPCService {
     public void flushFlowRules() {
         log.info("Received flush request");
         flowRuleService.removeFlowRulesById(appId);
+        for (Device device: deviceService.getAvailableDevices()) {
+            meterService.purgeMeters(device.id(), appId);
+        }
+    }
+
+    @Override
+    public void turnOnChecking() {
+        log.info("Received turnOnChecking request");
+
+        installAclPuntRules();
+
+        List<FlowRule> turnOnCheckingRules = new ArrayList<>();
+        for (Device device: deviceService.getAvailableDevices()) {
+            String tableIdIsoCheck = "FabricEgress.checker_control.tb_should_check_iso";
+            String tableIdQoSCheck = "FabricEgress.checker_control.tb_should_check_qos";
+            PiMatchFieldId ETH_IS_VALID = PiMatchFieldId.of("eth_is_valid");
+            PiActionId piActionIdCheckIso = PiActionId.of("FabricEgress.checker_control.check_iso");
+            PiActionId piActionIdCheckQoS = PiActionId.of("FabricEgress.checker_control.check_qos");
+
+            PiCriterion match1 = PiCriterion.builder()
+                    .matchExact(ETH_IS_VALID, 1)
+                    .build();
+
+            PiAction action1 = PiAction.builder()
+                    .withId(piActionIdCheckIso)
+                    .build();
+
+            turnOnCheckingRules.add(buildFlowRule(device.id(), appId, tableIdIsoCheck, match1, action1, MEDIUM_FLOW_RULE_PRIORITY));
+
+            PiCriterion match2 = PiCriterion.builder()
+                    .matchExact(ETH_IS_VALID, 1)
+                    .build();
+
+            PiAction action2 = PiAction.builder()
+                    .withId(piActionIdCheckQoS)
+                    .build();
+
+            turnOnCheckingRules.add(buildFlowRule(device.id(), appId, tableIdQoSCheck, match2, action2, MEDIUM_FLOW_RULE_PRIORITY));
+        }
+
+        flowRuleService.applyFlowRules(turnOnCheckingRules.toArray(new FlowRule[turnOnCheckingRules.size()]));
+    }
+
+    @Override
+    public void postCheckerSliceIdEntries(List<CheckerSliceIdEntry> checkerSliceIdEntries) {
+        log.info("Received checkerSliceIdEntries: {}", checkerSliceIdEntries);
+        handleCheckerSliceIdEntries(checkerSliceIdEntries);
+    }
+
+    @Override
+    public void postSliceQoSEntries(List<SliceQoSEntry> sliceQoSEntries) {
+        log.info("Received sliceQoSEntries: {}", sliceQoSEntries);
+        handleSliceQosEntries(sliceQoSEntries);
+    }
+
+    public void handleSliceQosEntries(List<SliceQoSEntry> sliceQoSEntries) {
+        for (SliceQoSEntry sliceQoSEntry: sliceQoSEntries) {
+            handleSliceQoSEntry(sliceQoSEntry);
+        }
+    }
+
+    public void handleSliceQoSEntry(SliceQoSEntry sliceQoSEntry) {
+        List<MeterRequest> sliceQoSEntryMeterRequests = new ArrayList<>();
+
+        sliceQoSEntryMeterRequests.addAll(getFlowRulesForSliceQoSEntry(sliceQoSEntry));
+
+        for (MeterRequest meterRequest: sliceQoSEntryMeterRequests) {
+            meterService.submit(meterRequest);
+        }
+    }
+
+    public List<MeterRequest> getFlowRulesForSliceQoSEntry(SliceQoSEntry sliceQoSEntry) {
+        List<MeterRequest> meterRequests = new ArrayList<>();
+
+        for (Device device: deviceService.getAvailableDevices()) {
+            MeterRequest.Builder meterRequest = DefaultMeterRequest.builder()
+                    .forDevice(device.id())
+                    .fromApp(appId)
+                    .withScope(MeterScope.of("FabricEgress.checker_control.slice_meter"))
+                    .withUnit(Meter.Unit.BYTES_PER_SEC)
+                    .withIndex((long) sliceQoSEntry.getSliceId());
+
+            Collection<Band> bands = Lists.newArrayList();
+            // Add rate 1
+            bands.add(DefaultBand.builder()
+                    .ofType(Band.Type.MARK_YELLOW)
+                    .withRate(1).burstSize(1)
+                    .build());
+
+            // Add rate 2
+            bands.add(DefaultBand.builder()
+                    .ofType(Band.Type.MARK_RED)
+                    .withRate(sliceQoSEntry.getPir() / 8).burstSize(1500)
+                    .build());
+
+            meterRequest.withBands(bands);
+            meterRequests.add(meterRequest.add());
+        }
+
+        return meterRequests;
+    }
+
+    public void handleCheckerSliceIdEntries(List<CheckerSliceIdEntry> checkerSliceIdEntries) {
+        for (CheckerSliceIdEntry checkerSliceIdEntry: checkerSliceIdEntries) {
+            handleCheckerSliceIdEntry(checkerSliceIdEntry);
+        }
+    }
+
+    public void handleCheckerSliceIdEntry(CheckerSliceIdEntry checkerSliceIdEntry) {
+        List<FlowRule> checkerSliceIdEntryFlowRules = new ArrayList<>();
+
+        checkerSliceIdEntryFlowRules.addAll(getFlowRulesForCheckerSliceIdEntry(checkerSliceIdEntry));
+
+        flowRuleService.applyFlowRules(checkerSliceIdEntryFlowRules.toArray(new FlowRule[checkerSliceIdEntryFlowRules.size()]));
+    }
+
+    public List<FlowRule> getFlowRulesForCheckerSliceIdEntry(CheckerSliceIdEntry checkerSliceIdEntry) {
+        List<FlowRule> flowRules = new ArrayList<>();
+
+        String tableIdIngressLookup = "FabricIngress.init_control.tb_lookup_static_slices";
+        String tableIdEgressLookup = "FabricEgress.checker_control.tb_lookup_static_slices";
+        PiMatchFieldId HDR_IG_PORT = PiMatchFieldId.of("ig_port");
+        PiMatchFieldId HDR_EG_PORT = PiMatchFieldId.of("eg_port");
+        PiActionId piActionIdIngressSliceLookup = PiActionId.of("FabricIngress.init_control.lookup_key_in_port_in_slices");
+        PiActionId piActionIdEgressSliceLookup = PiActionId.of("FabricEgress.checker_control.lookup_key_eg_port_in_slices");
+        PiActionParamId IG_SLICE_ID = PiActionParamId.of("ig_slice_id");
+        PiActionParamId EG_SLICE_ID = PiActionParamId.of("eg_slice_id");
+
+        PiCriterion match1 = PiCriterion.builder()
+                .matchExact(HDR_IG_PORT, checkerSliceIdEntry.getPortNumber().toLong())
+                .build();
+
+        PiAction action1 = PiAction.builder()
+                .withId(piActionIdIngressSliceLookup)
+                .withParameter(new PiActionParam(IG_SLICE_ID, checkerSliceIdEntry.getSliceId()))
+                .build();
+
+        flowRules.add(buildFlowRule(DeviceId.deviceId(checkerSliceIdEntry.getDeviceId()), appId, tableIdIngressLookup, match1, action1, MEDIUM_FLOW_RULE_PRIORITY));
+
+        PiCriterion match2 = PiCriterion.builder()
+                .matchExact(HDR_EG_PORT, checkerSliceIdEntry.getPortNumber().toLong())
+                .build();
+
+        PiAction action2 = PiAction.builder()
+                .withId(piActionIdEgressSliceLookup)
+                .withParameter(new PiActionParam(EG_SLICE_ID, checkerSliceIdEntry.getSliceId()))
+                .build();
+
+        flowRules.add(buildFlowRule(DeviceId.deviceId(checkerSliceIdEntry.getDeviceId()), appId, tableIdEgressLookup, match2, action2, MEDIUM_FLOW_RULE_PRIORITY));
+
+        String tableIdCheckFirstHop = "FabricIngress.init_control.tb_check_first_hop";
+        String tableIdCheckLastHop = "FabricEgress.checker_control.tb_check_last_hop";
+        PiActionId piActionIdCheckFirstHop = PiActionId.of("FabricIngress.init_control.set_first_hop");
+        PiActionId piActionIdCheckLastHop = PiActionId.of("FabricEgress.checker_control.set_last_hop");
+
+        PiCriterion match3 = PiCriterion.builder()
+                .matchExact(HDR_IG_PORT, checkerSliceIdEntry.getPortNumber().toLong())
+                .build();
+
+        PiAction action3 = PiAction.builder()
+                .withId(piActionIdCheckFirstHop)
+                .build();
+
+        flowRules.add(buildFlowRule(DeviceId.deviceId(checkerSliceIdEntry.getDeviceId()), appId, tableIdCheckFirstHop, match3, action3, MEDIUM_FLOW_RULE_PRIORITY));
+
+        PiCriterion match4 = PiCriterion.builder()
+                .matchExact(HDR_EG_PORT, checkerSliceIdEntry.getPortNumber().toLong())
+                .build();
+
+        PiAction action4 = PiAction.builder()
+                .withId(piActionIdCheckLastHop)
+                .build();
+
+        flowRules.add(buildFlowRule(DeviceId.deviceId(checkerSliceIdEntry.getDeviceId()), appId, tableIdCheckLastHop, match4, action4, MEDIUM_FLOW_RULE_PRIORITY));
+
+        return flowRules;
     }
 
     public void handleAttackEntries(List<ExfiltrationAttackEntry> attackEntries) {
@@ -143,6 +330,36 @@ public class TPCComponent implements TPCService {
         flowRules.add(buildFlowRule(DeviceId.deviceId(attackEntry.getDeviceId()), appId, tableId, match, action, MEDIUM_FLOW_RULE_PRIORITY));
 
         return flowRules;
+    }
+
+    public void installAclPuntRules()
+    {
+        List<FlowRule> puntRules = new ArrayList<>();
+        for (Device device: deviceService.getAvailableDevices()) {
+            FlowRule puntRule = failedPacketsAclRule(device.id());
+            if (mastershipService.isLocalMaster(device.id())) {
+                puntRules.add(puntRule);
+            }
+        }
+
+        flowRuleService.applyFlowRules(puntRules.toArray(new FlowRule[puntRules.size()]));
+    }
+
+    public FlowRule failedPacketsAclRule(DeviceId deviceId)
+    {
+        String tableId = "FabricIngress.acl.acl";
+        PiMatchFieldId HDR_ETH_TYPE = PiMatchFieldId.of("eth_type");
+        PiActionId piActionId = PiActionId.of("FabricIngress.acl.punt_to_cpu");
+
+        PiCriterion match = PiCriterion.builder()
+                .matchTernary(HDR_ETH_TYPE, CHECKER_REPORT_ETH_TYPE, CHECKER_REPORT_ETH_MASK)
+                .build();
+
+        PiAction action = PiAction.builder()
+                .withId(piActionId)
+                .build();
+
+        return buildFlowRule(deviceId, appId, tableId, match, action, HIGH_FLOW_RULE_PRIORITY);
     }
 
     /**

@@ -22,16 +22,37 @@ app-uninstall:
 
 app-reload: app-uninstall app-install
 
+setup-slicing-stanford1:
+				$(info *** Posting Stanford1 slicing isolation and QoS entries...)
+				${onos_curl} -X POST -H 'Content-Type:application/json' \
+					${onos_url}/tpc/add_slice_id -d@./flowrules/stanford1/slice-ids.json
+				${onos_curl} -X POST -H 'Content-Type:application/json' \
+					${onos_url}/tpc/add_slice_qos -d@./flowrules/stanford1/slice-qos.json
+				@echo
+
 attack-stanford1:
 				$(info *** Posting Stanford1 attack entries...)
 				${onos_curl} -X POST -H 'Content-Type:application/json' \
 					${onos_url}/tpc/add_attack -d@./flowrules/stanford1/attack-entries.json
 				@echo
 
+setup-slicing-stanford2:
+				$(info *** Posting Stanford1 slicing isolation and QoS entries...)
+				${onos_curl} -X POST -H 'Content-Type:application/json' \
+					${onos_url}/tpc/add_slice_id -d@./flowrules/stanford2/slice-ids.json
+				${onos_curl} -X POST -H 'Content-Type:application/json' \
+					${onos_url}/tpc/add_slice_qos -d@./flowrules/stanford2/slice-qos.json
+				@echo
+
 attack-stanford2:
 				$(info *** Posting Stanford2 attack entries...)
 				${onos_curl} -X POST -H 'Content-Type:application/json' \
 					${onos_url}/tpc/add_attack -d@./flowrules/stanford2/attack-entries.json
+				@echo
+
+turn-on-checking:
+				$(info *** Flushing flows...)
+				${onos_curl} ${onos_url}/tpc/turn_on_checking
 				@echo
 
 flush-flows:
