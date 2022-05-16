@@ -101,6 +101,11 @@ public class TPCComponent implements TPCService {
     protected void deactivate() {
         packetService.removeProcessor(packetProcessor);
 
+        flowRuleService.removeFlowRulesById(appId);
+        for (Device device: deviceService.getAvailableDevices()) {
+            meterService.purgeMeters(device.id(), appId);
+        }
+
         log.info("Stopped");
     }
 
@@ -200,7 +205,7 @@ public class TPCComponent implements TPCService {
             // Add rate 1
             bands.add(DefaultBand.builder()
                     .ofType(Band.Type.MARK_YELLOW)
-                    .withRate(1).burstSize(1)
+                    .withRate(0).burstSize(0)
                     .build());
 
             // Add rate 2

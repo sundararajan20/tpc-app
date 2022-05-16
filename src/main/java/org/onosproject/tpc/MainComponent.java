@@ -4,8 +4,11 @@ import com.google.common.collect.Lists;
 import org.onosproject.cfg.ComponentConfigService;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.core.CoreService;
+import org.onosproject.net.Device;
+import org.onosproject.net.device.DeviceService;
 import org.onosproject.net.flow.FlowRule;
 import org.onosproject.net.flow.FlowRuleService;
+import org.onosproject.net.meter.MeterService;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Deactivate;
@@ -32,6 +35,12 @@ public class MainComponent {
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     protected FlowRuleService flowRuleService;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY)
+    private MeterService meterService;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY)
+    private DeviceService deviceService;
 
     private ApplicationId appId;
 
@@ -75,6 +84,10 @@ public class MainComponent {
         }
 
         flows.forEach(flowRuleService::removeFlowRules);
+
+        for (Device device: deviceService.getAvailableDevices()) {
+            meterService.purgeMeters(device.id(), appId);
+        }
 
         return true;
     }
