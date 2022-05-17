@@ -1,0 +1,17 @@
+{
+  "1": {
+    "deviceId": "device:leaf1",
+    "portNumber": "13",
+    "sliceId": "1"
+  },
+  "2": {
+    "deviceId": "device:leaf2",
+    "portNumber": "11",
+    "sliceId": "1"
+  },
+  "3": {
+    "deviceId": "device:leaf2",
+    "portNumber": "3200",
+    "sliceId": "2"
+  }
+}
