@@ -16,4 +16,6 @@ public interface TPCService {
     void postSliceQoSEntries(List<SliceQoSEntry> sliceQoSEntries);
 
     void turnOnChecking();
+
+    void turnOffChecking();
 }

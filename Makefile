@@ -55,6 +55,11 @@ turn-on-checking:
 				${onos_curl} ${onos_url}/tpc/turn_on_checking
 				@echo
 
+turn-off-checking:
+				$(info *** Flushing flows...)
+				${onos_curl} ${onos_url}/tpc/turn_off_checking
+				@echo
+
 flush-flows:
 				$(info *** Flushing flows...)
 				${onos_curl} ${onos_url}/tpc/flush

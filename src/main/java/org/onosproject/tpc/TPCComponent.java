@@ -163,6 +163,42 @@ public class TPCComponent implements TPCService {
     }
 
     @Override
+    public void turnOffChecking() {
+        log.info("Received turnOffChecking request");
+
+        List<FlowRule> turnOnCheckingRules = new ArrayList<>();
+        for (Device device: deviceService.getAvailableDevices()) {
+            String tableIdIsoCheck = "FabricEgress.checker_control.tb_should_check_iso";
+            String tableIdQoSCheck = "FabricEgress.checker_control.tb_should_check_qos";
+            PiMatchFieldId ETH_IS_VALID = PiMatchFieldId.of("eth_is_valid");
+            PiActionId piActionIdCheckIso = PiActionId.of("FabricEgress.checker_control.check_iso");
+            PiActionId piActionIdCheckQoS = PiActionId.of("FabricEgress.checker_control.check_qos");
+
+            PiCriterion match1 = PiCriterion.builder()
+                    .matchExact(ETH_IS_VALID, 1)
+                    .build();
+
+            PiAction action1 = PiAction.builder()
+                    .withId(piActionIdCheckIso)
+                    .build();
+
+            turnOnCheckingRules.add(buildFlowRule(device.id(), appId, tableIdIsoCheck, match1, action1, MEDIUM_FLOW_RULE_PRIORITY));
+
+            PiCriterion match2 = PiCriterion.builder()
+                    .matchExact(ETH_IS_VALID, 1)
+                    .build();
+
+            PiAction action2 = PiAction.builder()
+                    .withId(piActionIdCheckQoS)
+                    .build();
+
+            turnOnCheckingRules.add(buildFlowRule(device.id(), appId, tableIdQoSCheck, match2, action2, MEDIUM_FLOW_RULE_PRIORITY));
+        }
+
+        flowRuleService.removeFlowRules(turnOnCheckingRules.toArray(new FlowRule[turnOnCheckingRules.size()]));
+    }
+
+    @Override
     public void postCheckerSliceIdEntries(List<CheckerSliceIdEntry> checkerSliceIdEntries) {
         log.info("Received checkerSliceIdEntries: {}", checkerSliceIdEntries);
         handleCheckerSliceIdEntries(checkerSliceIdEntries);

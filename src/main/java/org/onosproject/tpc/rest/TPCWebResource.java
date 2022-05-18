@@ -38,6 +38,13 @@ public class TPCWebResource extends AbstractWebResource {
         return Response.noContent().build();
     }
 
+    @GET
+    @Path("turn_off_checking")
+    public Response turnOffChecking() {
+        get(TPCService.class).turnOffChecking();
+        return Response.noContent().build();
+    }
+
     /**
      * Post attack entry.
      *
