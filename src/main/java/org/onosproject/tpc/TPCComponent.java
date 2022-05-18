@@ -20,12 +20,12 @@ import org.onlab.packet.Ethernet;
 import org.onosproject.cfg.ComponentConfigService;
 import org.onosproject.core.ApplicationId;
 import org.onosproject.mastership.MastershipService;
-import org.onosproject.net.Device;
-import org.onosproject.net.DeviceId;
+import org.onosproject.net.*;
 import org.onosproject.net.device.DeviceService;
 import org.onosproject.net.flow.FlowRule;
 import org.onosproject.net.flow.FlowRuleService;
 import org.onosproject.net.flow.criteria.PiCriterion;
+import org.onosproject.net.link.LinkService;
 import org.onosproject.net.meter.*;
 import org.onosproject.net.packet.PacketContext;
 import org.onosproject.net.packet.PacketProcessor;
@@ -76,6 +76,9 @@ public class TPCComponent implements TPCService {
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     private MeterService meterService;
+
+    @Reference(cardinality = ReferenceCardinality.MANDATORY)
+    private LinkService linkService;
 
     @Reference(cardinality = ReferenceCardinality.MANDATORY)
     private MainComponent mainComponent;
@@ -200,6 +203,8 @@ public class TPCComponent implements TPCService {
 
     @Override
     public void postCheckerSliceIdEntries(List<CheckerSliceIdEntry> checkerSliceIdEntries) {
+        setUpTelemetryStripping();
+
         log.info("Received checkerSliceIdEntries: {}", checkerSliceIdEntries);
         handleCheckerSliceIdEntries(checkerSliceIdEntries);
     }
@@ -305,32 +310,61 @@ public class TPCComponent implements TPCService {
 
         flowRules.add(buildFlowRule(DeviceId.deviceId(checkerSliceIdEntry.getDeviceId()), appId, tableIdEgressLookup, match2, action2, MEDIUM_FLOW_RULE_PRIORITY));
 
-        String tableIdCheckFirstHop = "FabricIngress.init_control.tb_check_first_hop";
-        String tableIdCheckLastHop = "FabricEgress.checker_control.tb_check_last_hop";
-        PiActionId piActionIdCheckFirstHop = PiActionId.of("FabricIngress.init_control.set_first_hop");
-        PiActionId piActionIdCheckLastHop = PiActionId.of("FabricEgress.checker_control.set_last_hop");
-
-        PiCriterion match3 = PiCriterion.builder()
-                .matchExact(HDR_IG_PORT, checkerSliceIdEntry.getPortNumber().toLong())
-                .build();
-
-        PiAction action3 = PiAction.builder()
-                .withId(piActionIdCheckFirstHop)
-                .build();
-
-        flowRules.add(buildFlowRule(DeviceId.deviceId(checkerSliceIdEntry.getDeviceId()), appId, tableIdCheckFirstHop, match3, action3, MEDIUM_FLOW_RULE_PRIORITY));
-
-        PiCriterion match4 = PiCriterion.builder()
-                .matchExact(HDR_EG_PORT, checkerSliceIdEntry.getPortNumber().toLong())
-                .build();
-
-        PiAction action4 = PiAction.builder()
-                .withId(piActionIdCheckLastHop)
-                .build();
-
-        flowRules.add(buildFlowRule(DeviceId.deviceId(checkerSliceIdEntry.getDeviceId()), appId, tableIdCheckLastHop, match4, action4, MEDIUM_FLOW_RULE_PRIORITY));
-
         return flowRules;
+    }
+
+    public void setUpTelemetryStripping() {
+        List<FlowRule> flowRules = new ArrayList<>();
+
+        for (Device device: deviceService.getAvailableDevices()) {
+            for (PortNumber portNumber: edgePortsOnDevice(device.id())) {
+                PiMatchFieldId HDR_IG_PORT = PiMatchFieldId.of("ig_port");
+                PiMatchFieldId HDR_EG_PORT = PiMatchFieldId.of("eg_port");
+                String tableIdCheckFirstHop = "FabricIngress.init_control.tb_check_first_hop";
+                String tableIdCheckLastHop = "FabricEgress.checker_control.tb_check_last_hop";
+                PiActionId piActionIdCheckFirstHop = PiActionId.of("FabricIngress.init_control.set_first_hop");
+                PiActionId piActionIdCheckLastHop = PiActionId.of("FabricEgress.checker_control.set_last_hop");
+
+                PiCriterion match3 = PiCriterion.builder()
+                        .matchExact(HDR_IG_PORT, portNumber.toLong())
+                        .build();
+
+                PiAction action3 = PiAction.builder()
+                        .withId(piActionIdCheckFirstHop)
+                        .build();
+
+                flowRules.add(buildFlowRule(device.id(), appId, tableIdCheckFirstHop, match3, action3, MEDIUM_FLOW_RULE_PRIORITY));
+
+                PiCriterion match4 = PiCriterion.builder()
+                        .matchExact(HDR_EG_PORT, portNumber.toLong())
+                        .build();
+
+                PiAction action4 = PiAction.builder()
+                        .withId(piActionIdCheckLastHop)
+                        .build();
+
+                flowRules.add(buildFlowRule(device.id(), appId, tableIdCheckLastHop, match4, action4, MEDIUM_FLOW_RULE_PRIORITY));
+            }
+        }
+
+        flowRuleService.applyFlowRules(flowRules.toArray(new FlowRule[flowRules.size()]));
+    }
+
+    public List<PortNumber> edgePortsOnDevice(DeviceId deviceId) {
+        List<Port> portsOnDevice = deviceService.getPorts(deviceId);
+        List<PortNumber> portNumbersOnDevice = new ArrayList<>();
+        for (Port port: portsOnDevice) {
+            portNumbersOnDevice.add(port.number());
+        }
+        Set<Link> linksOnDevice = linkService.getDeviceEgressLinks(deviceId);
+
+        for (Link link: linksOnDevice) {
+            if (portNumbersOnDevice.contains(link.src().port())) {
+                portNumbersOnDevice.remove(link.src().port());
+            }
+        }
+
+        return portNumbersOnDevice;
     }
 
     public void handleAttackEntries(List<ExfiltrationAttackEntry> attackEntries) {
