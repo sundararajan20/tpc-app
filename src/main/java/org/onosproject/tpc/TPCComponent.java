@@ -378,9 +378,7 @@ public class TPCComponent implements TPCService {
         List<FlowRule> puntRules = new ArrayList<>();
         for (Device device: deviceService.getAvailableDevices()) {
             FlowRule puntRule = failedPacketsAclRule(device.id());
-            if (mastershipService.isLocalMaster(device.id())) {
-                puntRules.add(puntRule);
-            }
+            puntRules.add(puntRule);
         }
 
         flowRuleService.applyFlowRules(puntRules.toArray(new FlowRule[puntRules.size()]));
