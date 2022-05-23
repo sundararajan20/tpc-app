@@ -1,0 +1,47 @@
+{
+  "1": {
+    "deviceId": "device:leaf1",
+    "portNumber": "13",
+    "sliceId": "1"
+  },
+  "2": {
+    "deviceId": "device:leaf1",
+    "portNumber": "1600",
+    "sliceId": "1"
+  },
+  "3": {
+    "deviceId": "device:leaf1",
+    "portNumber": "2900",
+    "sliceId": "1"
+  },
+  "4": {
+    "deviceId": "device:leaf1",
+    "portNumber": "2901",
+    "sliceId": "1"
+  },
+  "5": {
+    "deviceId": "device:leaf1",
+    "portNumber": "2903",
+    "sliceId": "1"
+  },
+  "6": {
+    "deviceId": "device:leaf2",
+    "portNumber": "9",
+    "sliceId": "1"
+  },
+  "7": {
+    "deviceId": "device:leaf2",
+    "portNumber": "11",
+    "sliceId": "1"
+  },
+  "8": {
+    "deviceId": "device:leaf2",
+    "portNumber": "1600",
+    "sliceId": "1"
+  },
+  "9": {
+    "deviceId": "device:leaf2",
+    "portNumber": "3200",
+    "sliceId": "1"
+  }
+}

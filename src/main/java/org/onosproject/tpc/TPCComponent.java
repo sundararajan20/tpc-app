@@ -252,7 +252,7 @@ public class TPCComponent implements TPCService {
             // Add rate 2
             bands.add(DefaultBand.builder()
                     .ofType(Band.Type.MARK_RED)
-                    .withRate(sliceQoSEntry.getPir() / 8).burstSize(30000)
+                    .withRate(sliceQoSEntry.getPir() / 8).burstSize(60000)
                     .build());
 
             meterRequest.withBands(bands);
